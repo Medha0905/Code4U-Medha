@@ -1,0 +1,43 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: canteen
+      POSTGRES_PASSWORD: canteen_dev_password
+      POSTGRES_DB: smart_canteen
+    ports:
+      - "5432:5432"
+    volumes:
+      - canteen_pg_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      NODE_ENV: development
+      PORT: 5000
+      CORS_ORIGIN: http://localhost:5173
+      DATABASE_URL: postgresql://canteen:canteen_dev_password@postgres:5432/smart_canteen?schema=public
+      JWT_ACCESS_SECRET: dev_access_secret_change_me
+      JWT_REFRESH_SECRET: dev_refresh_secret_change_me
+    ports:
+      - "5000:5000"
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:5000/api/v1
+      VITE_SOCKET_URL: http://localhost:5000
+    ports:
+      - "5173:5173"
+
+volumes:
+  canteen_pg_data:

@@ -1,0 +1,444 @@
+// ================================================================
+// Smart Canteen Queue & AI Pre-Order System — Database Schema
+// PostgreSQL + Prisma ORM
+// ================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------------------------------------------
+// ENUMS
+// ----------------------------------------------------------------
+
+enum Role {
+  STUDENT
+  VENDOR
+  ADMIN
+}
+
+enum ShopStatus {
+  OPEN
+  CLOSED
+  PAUSED // auto-pause when kitchen load is extreme
+}
+
+enum FoodAvailability {
+  AVAILABLE
+  LIMITED
+  ALMOST_FINISHED
+  SOLD_OUT
+}
+
+enum SeatStatus {
+  PLENTY
+  MODERATE
+  FEW_LEFT
+  NEARLY_FULL
+  FULL
+}
+
+enum OrderType {
+  IMMEDIATE
+  SCHEDULED
+  BULK
+}
+
+enum OrderStatus {
+  PLACED
+  ACCEPTED
+  PREPARING
+  READY
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentMethod {
+  COD
+  ONLINE
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum NotificationType {
+  ORDER_ACCEPTED
+  ORDER_PREPARING
+  ORDER_READY
+  ORDER_DELAYED
+  PICKUP_REMINDER
+  ORDER_COMPLETED
+  LOW_STOCK
+  BULK_ORDER
+  SYSTEM
+}
+
+// ----------------------------------------------------------------
+// CORE USER MODELS
+// ----------------------------------------------------------------
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         Role
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  student Student?
+  vendor  Vendor?
+  admin   Admin?
+
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Student {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName      String
+  phone         String?
+  avatarUrl     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders          Order[]
+  favorites       Favorite[]
+  queueEntries    QueueEntry[]
+  seatReservations SeatReservation[]
+  bulkOrders      BulkOrder[]
+  codStrikes      CodStrike[]
+  reviews         Review[]
+
+  @@map("students")
+}
+
+model Vendor {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName  String
+  phone     String?
+  hasSeenTutorial Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  shop Shop?
+
+  @@map("vendors")
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fullName  String
+  createdAt DateTime @default(now())
+
+  @@map("admins")
+}
+
+// ----------------------------------------------------------------
+// SHOP & MENU
+// ----------------------------------------------------------------
+
+model Shop {
+  id              String     @id @default(uuid())
+  vendorId        String     @unique
+  vendor          Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  logoUrl         String?
+  location        String?
+  categories      String[]   @default([])
+  contactPhone    String?
+  contactEmail    String?
+  openingTime     String?    // "09:00"
+  closingTime     String?    // "18:00"
+  status          ShopStatus @default(CLOSED)
+  seatStatus      SeatStatus @default(PLENTY)
+  autoPauseEnabled Boolean   @default(false)
+  isApproved      Boolean    @default(true)
+  isDeleted       Boolean    @default(false)
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  menuItems        MenuItem[]
+  orders           Order[]
+  queueEntries     QueueEntry[]
+  bulkOrders       BulkOrder[]
+  seatReservations SeatReservation[]
+  codStrikes       CodStrike[]
+  dailyReports     DailyReport[]
+  reviews          Review[]
+
+  @@map("shops")
+}
+
+model MenuItem {
+  id             String           @id @default(uuid())
+  shopId         String
+  shop           Shop             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  category       String
+  price          Decimal          @db.Decimal(10, 2)
+  imageUrl       String?
+  prepTimeMinutes Int             @default(10)
+  availability   FoodAvailability @default(AVAILABLE)
+  isActive       Boolean          @default(true)
+  customizations Json?            // vendor-defined add-on groups: [{ name, options: [{ label, extraPrice }] }]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  inventory   Inventory?
+  orderItems  OrderItem[]
+  favorites   Favorite[]
+
+  @@index([shopId])
+  @@map("menu_items")
+}
+
+model Inventory {
+  id               String   @id @default(uuid())
+  menuItemId       String   @unique
+  menuItem         MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  quantity         Int      @default(0)
+  openingStock     Int      @default(0)
+  lowStockThreshold Int     @default(10)
+  updatedAt        DateTime @updatedAt
+
+  @@map("inventory")
+}
+
+model Favorite {
+  id         String   @id @default(uuid())
+  studentId  String
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([studentId, menuItemId])
+  @@map("favorites")
+}
+
+// ----------------------------------------------------------------
+// ORDERS
+// ----------------------------------------------------------------
+
+model Order {
+  id              String        @id @default(uuid())
+  studentId       String
+  student         Student       @relation(fields: [studentId], references: [id])
+  shopId          String
+  shop            Shop          @relation(fields: [shopId], references: [id])
+  type            OrderType     @default(IMMEDIATE)
+  status          OrderStatus   @default(PLACED)
+  totalAmount     Decimal       @db.Decimal(10, 2)
+  paymentMethod   PaymentMethod
+  scheduledPickupAt DateTime?
+  specialInstructions String?
+  qrToken         String        @unique @default(uuid())
+  tokenNumber     Int
+  isScanned       Boolean       @default(false)
+  scannedAt       DateTime?
+  acceptedAt      DateTime?
+  preparingAt     DateTime?
+  readyAt         DateTime?
+  completedAt     DateTime?
+  estimatedPickupAt DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items        OrderItem[]
+  payment      Payment?
+  queueEntry   QueueEntry?
+  bulkOrder    BulkOrder?
+  review       Review?
+
+  @@index([shopId, status])
+  @@index([studentId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                     String   @id @default(uuid())
+  orderId                String
+  order                  Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId             String
+  menuItem               MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity               Int
+  unitPrice              Decimal  @db.Decimal(10, 2)
+  selectedCustomizations Json?
+
+  @@map("order_items")
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  orderId       String        @unique
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  amount        Decimal       @db.Decimal(10, 2)
+  transactionRef String?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@map("payments")
+}
+
+// ----------------------------------------------------------------
+// QUEUE
+// ----------------------------------------------------------------
+
+model QueueEntry {
+  id             String   @id @default(uuid())
+  orderId        String   @unique
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shopId         String
+  shop           Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        Student  @relation(fields: [studentId], references: [id])
+  position       Int
+  estimatedWaitMinutes Int
+  enteredAt      DateTime @default(now())
+  leftAt         DateTime?
+
+  @@index([shopId, position])
+  @@map("queue_entries")
+}
+
+// ----------------------------------------------------------------
+// BULK ORDERS & SEAT BOOKING
+// ----------------------------------------------------------------
+
+model BulkOrder {
+  id               String     @id @default(uuid())
+  orderId          String     @unique
+  order            Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  studentId        String
+  student          Student    @relation(fields: [studentId], references: [id])
+  shopId           String
+  shop             Shop       @relation(fields: [shopId], references: [id])
+  numberOfPeople   Int
+  eventDate        DateTime
+  servingTime      String
+  eatingTime       String?
+  specialInstructions String?
+  createdAt        DateTime   @default(now())
+
+  seatReservation SeatReservation?
+
+  @@map("bulk_orders")
+}
+
+model SeatReservation {
+  id             String    @id @default(uuid())
+  bulkOrderId    String?   @unique
+  bulkOrder      BulkOrder? @relation(fields: [bulkOrderId], references: [id])
+  studentId      String
+  student        Student   @relation(fields: [studentId], references: [id])
+  shopId         String
+  shop           Shop      @relation(fields: [shopId], references: [id])
+  numberOfPeople Int
+  preferredTime  DateTime
+  confirmed      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+
+  @@map("seat_reservations")
+}
+
+// ----------------------------------------------------------------
+// COD NO-SHOW PROTECTION (per-shop)
+// ----------------------------------------------------------------
+
+model CodStrike {
+  id          String   @id @default(uuid())
+  studentId   String
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  strikeCount Int      @default(0)
+  codBlockedUntil DateTime?
+  codBlockedPermanently Boolean @default(false)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([studentId, shopId])
+  @@map("cod_strikes")
+}
+
+// ----------------------------------------------------------------
+// NOTIFICATIONS
+// ----------------------------------------------------------------
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+// ----------------------------------------------------------------
+// REPORTS (End of Day, generated from real order data)
+// ----------------------------------------------------------------
+
+model DailyReport {
+  id                 String   @id @default(uuid())
+  shopId             String
+  shop               Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  reportDate         DateTime @db.Date
+  totalOrders        Int
+  totalRevenue        Decimal  @db.Decimal(10, 2)
+  bestSellingItemId  String?
+  leastSellingItemId String?
+  peakHour           Int?
+  avgWaitMinutes     Float?
+  productWiseSales   Json     // { menuItemId: { name, qty, revenue } }
+  createdAt          DateTime @default(now())
+
+  @@unique([shopId, reportDate])
+  @@map("daily_reports")
+}
+
+// ----------------------------------------------------------------
+// REVIEWS (one per completed order, ties a rating to real purchase)
+// ----------------------------------------------------------------
+
+model Review {
+  id        String   @id @default(uuid())
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  studentId String
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  orderId   String   @unique
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rating    Int      // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@index([shopId])
+  @@map("reviews")
+}
