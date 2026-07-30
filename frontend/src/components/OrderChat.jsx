@@ -24,7 +24,7 @@ export default function OrderChat({ orderId }) {
 
     const socket = getSocket();
     socket.emit('order:subscribe', orderId);
-    const onNew = (msg) => setMessages((prev) => [...prev, msg]);
+    const onNew = (msg) => setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
     socket.on('message:new', onNew);
     return () => {
       socket.emit('order:unsubscribe', orderId);

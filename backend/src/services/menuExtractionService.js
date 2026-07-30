@@ -1,10 +1,13 @@
 /**
  * AI Menu Photo Extraction — step 2: structuring.
- * Turns raw OCR text lines into { name, price, category } suggestions using
- * pattern rules (price detection, all-caps section headers as categories).
- * This is intentionally a human-in-the-loop tool: the vendor reviews and
- * edits every suggested row before anything is actually saved to the menu,
- * since OCR + heuristics on real-world menu photos will never be perfect.
+ * Turns raw OCR text lines into { name, price } suggestions using price
+ * detection. Deliberately does NOT try to guess category, prep time, stock,
+ * or a photo — those are vendor-entered per item in the review step, since
+ * OCR has no way to know real kitchen prep times or stock counts, and
+ * heuristically guessing "category headings" from noisy scanned text
+ * (logos/watermarks) produced false positives in practice.
+ * This is a human-in-the-loop tool: the vendor reviews and edits every
+ * suggested row before anything is actually saved to the menu.
  */
 
 const PRICE_PATTERNS = [
@@ -23,14 +26,6 @@ function extractPrice(line) {
   return null;
 }
 
-function isLikelyCategoryHeading(line) {
-  const clean = line.trim();
-  if (clean.length < 3 || clean.length > 30) return false;
-  if (/\d/.test(clean)) return false; // headings rarely contain numbers
-  const letters = clean.replace(/[^a-zA-Z]/g, '');
-  return letters.length > 0 && clean === clean.toUpperCase();
-}
-
 function cleanName(text) {
   return text
     .replace(/[|_~•\-]+$/g, '')
@@ -39,7 +34,7 @@ function cleanName(text) {
     .trim();
 }
 
-/** Parses raw OCR text into an array of suggested menu items. */
+/** Parses raw OCR text into an array of { name, price } suggestions. */
 function parseMenuText(rawText) {
   const lines = rawText
     .split('\n')
@@ -47,37 +42,21 @@ function parseMenuText(rawText) {
     .filter((l) => l.length > 0);
 
   const suggestions = [];
-  let currentCategory = 'Menu';
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
-    if (isLikelyCategoryHeading(line)) {
-      currentCategory = line
-        .toLowerCase()
-        .replace(/\b\w/g, (c) => c.toUpperCase());
-      continue;
-    }
-
     const priced = extractPrice(line);
     if (priced && priced.remainder.length >= 2) {
-      suggestions.push({
-        name: cleanName(priced.remainder),
-        price: priced.price,
-        category: currentCategory,
-      });
+      suggestions.push({ name: cleanName(priced.remainder), price: priced.price });
       continue;
     }
 
     // Name on this line, price possibly on the very next line (common layout)
     if (!priced && lines[i + 1] && /^\s*(?:₹|rs\.?|inr)?\s?\d{1,4}(?:\.\d{1,2})?\s*$/i.test(lines[i + 1])) {
       const priceOnly = lines[i + 1].match(/\d{1,4}(?:\.\d{1,2})?/);
-      if (priceOnly && line.length >= 2 && !isLikelyCategoryHeading(line)) {
-        suggestions.push({
-          name: cleanName(line),
-          price: parseFloat(priceOnly[0]),
-          category: currentCategory,
-        });
+      if (priceOnly && line.length >= 2) {
+        suggestions.push({ name: cleanName(line), price: parseFloat(priceOnly[0]) });
         i += 1; // consume the price-only line
       }
     }

@@ -8,7 +8,7 @@ export function getSocket() {
   if (!socket) {
     socket = io(SOCKET_URL, {
       autoConnect: false,
-      auth: { token: localStorage.getItem('accessToken') },
+      auth: { token: sessionStorage.getItem('accessToken') },
     });
   }
   return socket;
@@ -16,7 +16,7 @@ export function getSocket() {
 
 export function connectSocket() {
   const s = getSocket();
-  s.auth = { token: localStorage.getItem('accessToken') };
+  s.auth = { token: sessionStorage.getItem('accessToken') };
   if (!s.connected) s.connect();
   return s;
 }

@@ -34,6 +34,18 @@ export default function StudentOrders() {
     return () => socket.off('order:status', onStatus);
   }, []);
 
+  // Bug fix: this page listened for 'order:status' but never joined the
+  // relevant shop room(s), so events never arrived — students had to
+  // manually refresh to see status changes. Subscribe to every shop the
+  // student currently has an active order with.
+  useEffect(() => {
+    if (!orders) return;
+    const socket = getSocket();
+    const shopIds = [...new Set(orders.filter((o) => ACTIVE.includes(o.status)).map((o) => o.shopId))];
+    shopIds.forEach((id) => socket.emit('shop:subscribe', id));
+    return () => shopIds.forEach((id) => socket.emit('shop:unsubscribe', id));
+  }, [orders]);
+
   const submitReview = async () => {
     setSubmitting(true);
     try {

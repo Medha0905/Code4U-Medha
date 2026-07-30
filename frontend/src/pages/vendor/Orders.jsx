@@ -14,6 +14,7 @@ import QrScanner from '../../components/QrScanner';
 import ErrorBoundary from '../../components/ErrorBoundary';
 import OrderChat from '../../components/OrderChat';
 
+import * as shopsApi from '../../services/shops';
 const NEXT_STATUS = { PLACED: 'ACCEPTED', ACCEPTED: 'PREPARING', PREPARING: 'READY' };
 const NEXT_LABEL = { PLACED: 'Accept', ACCEPTED: 'Start preparing', PREPARING: 'Mark ready' };
 
@@ -32,7 +33,22 @@ export default function VendorOrders() {
     const socket = getSocket();
     const refresh = () => load();
     socket.on('order:status', refresh);
-    return () => socket.off('order:status', refresh);
+    socket.on('kitchen:load', refresh);
+
+    // Bug fix: this page was listening for 'order:status' but never actually
+    // joined the shop's Socket.io room, so the event never arrived — vendors
+    // had to manually refresh to see new orders. Now it subscribes properly.
+    let shopId;
+    shopsApi.getMyShop().then((s) => {
+      shopId = s.id;
+      socket.emit('shop:subscribe', shopId);
+    }).catch(() => {});
+
+    return () => {
+      socket.off('order:status', refresh);
+      socket.off('kitchen:load', refresh);
+      if (shopId) socket.emit('shop:unsubscribe', shopId);
+    };
   }, []);
 
   const advance = async (order, waitBucket) => {

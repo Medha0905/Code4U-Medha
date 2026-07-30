@@ -23,11 +23,12 @@ export default function DashboardLayout({ navItems, brandLabel }) {
         </div>
 
         <nav className="flex-1 space-y-1">
-          {navItems.map(({ to, label, icon: Icon, end }) => (
+          {navItems.map(({ to, label, icon: Icon, end, tourId }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
+              data-tour={tourId}
               className={({ isActive }) =>
                 `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition-colors ${
                   isActive ? 'bg-indigo-500 text-white shadow-soft' : 'text-ink-700 hover:bg-cream-200'

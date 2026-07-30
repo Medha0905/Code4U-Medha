@@ -39,12 +39,12 @@ const studentNav = [
 ];
 
 const vendorNav = [
-  { to: '/vendor', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/vendor/menu', label: 'Menu', icon: UtensilsCrossed },
-  { to: '/vendor/orders', label: 'Orders', icon: ClipboardList },
-  { to: '/vendor/bulk-orders', label: 'Bulk Orders', icon: Users2 },
-  { to: '/vendor/analytics', label: 'Analytics', icon: LayoutDashboard },
-  { to: '/vendor/shop', label: 'Shop', icon: Store },
+  { to: '/vendor', label: 'Dashboard', icon: LayoutDashboard, end: true, tourId: 'nav-dashboard' },
+  { to: '/vendor/menu', label: 'Menu', icon: UtensilsCrossed, tourId: 'nav-menu' },
+  { to: '/vendor/orders', label: 'Orders', icon: ClipboardList, tourId: 'nav-orders' },
+  { to: '/vendor/bulk-orders', label: 'Bulk Orders', icon: Users2, tourId: 'nav-bulk' },
+  { to: '/vendor/analytics', label: 'Analytics', icon: LayoutDashboard, tourId: 'nav-analytics' },
+  { to: '/vendor/shop', label: 'Shop', icon: Store, tourId: 'nav-shop' },
 ];
 
 const adminNav = [

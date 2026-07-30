@@ -6,21 +6,21 @@ const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
-    const stored = localStorage.getItem('user');
+    const stored = sessionStorage.getItem('user');
     return stored ? JSON.parse(stored) : null;
   });
   const [loading, setLoading] = useState(true);
 
   const persistSession = useCallback((data) => {
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('refreshToken', data.refreshToken);
-    localStorage.setItem('user', JSON.stringify(data.user));
+    sessionStorage.setItem('accessToken', data.accessToken);
+    sessionStorage.setItem('refreshToken', data.refreshToken);
+    sessionStorage.setItem('user', JSON.stringify(data.user));
     setUser(data.user);
     connectSocket();
   }, []);
 
   useEffect(() => {
-    const token = localStorage.getItem('accessToken');
+    const token = sessionStorage.getItem('accessToken');
     if (!token) {
       setLoading(false);
       return;
@@ -29,11 +29,11 @@ export function AuthProvider({ children }) {
       .getMe()
       .then((fresh) => {
         setUser(fresh);
-        localStorage.setItem('user', JSON.stringify(fresh));
+        sessionStorage.setItem('user', JSON.stringify(fresh));
         connectSocket();
       })
       .catch(() => {
-        localStorage.clear();
+        sessionStorage.clear();
         setUser(null);
       })
       .finally(() => setLoading(false));
@@ -58,7 +58,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
-    localStorage.clear();
+    sessionStorage.clear();
     disconnectSocket();
     setUser(null);
   };

@@ -153,6 +153,7 @@ const bulkCreateFromExtraction = asyncHandler(async (req, res) => {
         category: it.category || 'Menu',
         price: Number(it.price),
         prepTimeMinutes: Number(it.prepTimeMinutes) || 10,
+        imageUrl: it.imageUrl || undefined,
         inventory: {
           create: { quantity: stock, openingStock: stock, lowStockThreshold: Number(it.lowStockThreshold) || 10 },
         },

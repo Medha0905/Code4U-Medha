@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, PackagePlus, ImagePlus, X, Sparkles, Trash2 } from 'lucide-react';
+import { Plus, PackagePlus, ImagePlus, X, Sparkles, Trash2, Pencil } from 'lucide-react';
 import * as shopsApi from '../../services/shops';
 import * as menuApi from '../../services/menu';
 import StatusPill from '../../components/StatusPill';
@@ -18,11 +18,13 @@ const emptyForm = {
 export default function VendorMenu() {
   const [items, setItems] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null); // null = adding new, else editing existing
   const [form, setForm] = useState(emptyForm);
   const [addOns, setAddOns] = useState([]); // [{ label, extraPrice }]
   const [uploading, setUploading] = useState(false);
   const [restockTarget, setRestockTarget] = useState(null);
   const [restockAmount, setRestockAmount] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef(null);
 
@@ -31,10 +33,30 @@ export default function VendorMenu() {
   const [extracting, setExtracting] = useState(false);
   const [extractedItems, setExtractedItems] = useState(null); // null = not run yet
   const [confirmingExtraction, setConfirmingExtraction] = useState(false);
+  const [uploadingRowIndex, setUploadingRowIndex] = useState(null);
   const aiFileInputRef = useRef(null);
+  const rowFileInputRef = useRef(null);
 
   const load = () => shopsApi.getMyShop().then((s) => setItems(s.menuItems)).catch(() => setItems([]));
   useEffect(() => { load(); }, []);
+
+  const openAddModal = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setAddOns([]);
+    setModalOpen(true);
+  };
+
+  const openEditModal = (item) => {
+    setEditingId(item.id);
+    setForm({
+      name: item.name, description: item.description || '', category: item.category,
+      price: item.price, prepTimeMinutes: item.prepTimeMinutes, imageUrl: item.imageUrl || '',
+      openingStock: '', lowStockThreshold: item.inventory?.lowStockThreshold || 10,
+    });
+    setAddOns(item.customizations?.[0]?.options || []);
+    setModalOpen(true);
+  };
 
   const handleFileSelect = async (e) => {
     const file = e.target.files?.[0];
@@ -64,21 +86,31 @@ export default function VendorMenu() {
         ? [{ name: 'Add-ons', options: validAddOns.map((a) => ({ label: a.label.trim(), extraPrice: Number(a.extraPrice) || 0 })) }]
         : undefined;
 
-      await menuApi.addMenuItem({
-        ...form,
-        price: Number(form.price),
-        prepTimeMinutes: Number(form.prepTimeMinutes) || 10,
-        openingStock: Number(form.openingStock || 0),
-        lowStockThreshold: Number(form.lowStockThreshold),
-        customizations,
-      });
-      toast.success('Menu item added');
+      if (editingId) {
+        await menuApi.updateMenuItem(editingId, {
+          name: form.name, description: form.description, category: form.category,
+          price: Number(form.price), prepTimeMinutes: Number(form.prepTimeMinutes) || 10,
+          imageUrl: form.imageUrl, customizations,
+        });
+        toast.success('Menu item updated');
+      } else {
+        await menuApi.addMenuItem({
+          ...form,
+          price: Number(form.price),
+          prepTimeMinutes: Number(form.prepTimeMinutes) || 10,
+          openingStock: Number(form.openingStock || 0),
+          lowStockThreshold: Number(form.lowStockThreshold),
+          customizations,
+        });
+        toast.success('Menu item added');
+      }
       setModalOpen(false);
       setForm(emptyForm);
       setAddOns([]);
+      setEditingId(null);
       load();
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Could not add item');
+      toast.error(err.response?.data?.message || 'Could not save item');
     } finally {
       setSaving(false);
     }
@@ -96,6 +128,17 @@ export default function VendorMenu() {
     }
   };
 
+  const confirmDelete = async () => {
+    try {
+      await menuApi.deleteMenuItem(deleteTarget.id);
+      toast.success('Menu item deleted');
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not delete item');
+    }
+  };
+
   // ---- AI Menu Photo Extraction ----
   const handleAiFileSelect = async (e) => {
     const file = e.target.files?.[0];
@@ -104,7 +147,12 @@ export default function VendorMenu() {
     setExtractedItems(null);
     try {
       const result = await menuApi.extractMenuFromPhoto(file);
-      setExtractedItems(result.suggestions.map((s) => ({ ...s, openingStock: '', include: true })));
+      // AI only extracts name + price — prep time, stock, category, and photo
+      // are entered by the vendor for each item, right here in review.
+      setExtractedItems(result.suggestions.map((s) => ({
+        name: s.name, price: s.price, category: '', prepTimeMinutes: '', openingStock: '',
+        lowStockThreshold: 10, imageUrl: '', include: true,
+      })));
     } catch (err) {
       toast.error(err.response?.data?.message || 'Could not read this photo');
     } finally {
@@ -117,9 +165,24 @@ export default function VendorMenu() {
   };
   const removeExtractedRow = (i) => setExtractedItems((prev) => prev.filter((_, idx) => idx !== i));
 
+  const uploadRowPhoto = async (i, file) => {
+    setUploadingRowIndex(i);
+    try {
+      const url = await menuApi.uploadMenuImage(file);
+      updateExtractedRow(i, 'imageUrl', url);
+    } catch {
+      toast.error('Could not upload photo for this item');
+    } finally {
+      setUploadingRowIndex(null);
+    }
+  };
+
   const confirmExtraction = async () => {
     const toCreate = extractedItems.filter((it) => it.include && it.name && it.price);
+    const missingPrepTime = toCreate.some((it) => !it.prepTimeMinutes);
     if (toCreate.length === 0) return toast.error('Select at least one item to add');
+    if (missingPrepTime) return toast.error('Enter a prep time for every item you\'re adding');
+
     setConfirmingExtraction(true);
     try {
       const createdItems = await menuApi.bulkCreateFromExtraction(toCreate);
@@ -145,12 +208,12 @@ export default function VendorMenu() {
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => setAiModalOpen(true)}><Sparkles className="w-4 h-4" /> Upload menu photo (AI)</Button>
-          <Button onClick={() => setModalOpen(true)}><Plus className="w-4 h-4" /> Add item</Button>
+          <Button onClick={openAddModal}><Plus className="w-4 h-4" /> Add item</Button>
         </div>
       </div>
 
       {items.length === 0 ? (
-        <EmptyState icon={Plus} title="No menu items yet" description="Add your first dish to start receiving orders." action={<Button onClick={() => setModalOpen(true)}>Add item</Button>} />
+        <EmptyState icon={Plus} title="No menu items yet" description="Add your first dish to start receiving orders." action={<Button onClick={openAddModal}>Add item</Button>} />
       ) : (
         <div className="card divide-y divide-cream-200">
           {items.map((item) => (
@@ -166,15 +229,21 @@ export default function VendorMenu() {
                 )}
               </div>
               <StatusPill status={item.availability} size="sm" />
-              <button onClick={() => setRestockTarget(item)} className="btn-ghost !px-3">
+              <button onClick={() => setRestockTarget(item)} className="btn-ghost !px-3" title="Restock">
                 <PackagePlus className="w-4 h-4" />
+              </button>
+              <button onClick={() => openEditModal(item)} className="btn-ghost !px-3" title="Edit">
+                <Pencil className="w-4 h-4" />
+              </button>
+              <button onClick={() => setDeleteTarget(item)} className="btn-ghost !px-3 text-rose-500" title="Delete">
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           ))}
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => { setModalOpen(false); setAddOns([]); }} title="Add menu item">
+      <Modal open={modalOpen} onClose={() => { setModalOpen(false); setAddOns([]); setEditingId(null); }} title={editingId ? 'Edit menu item' : 'Add menu item'}>
         <form onSubmit={submit} className="space-y-4">
           <div>
             <label className="label">Photo</label>
@@ -201,12 +270,14 @@ export default function VendorMenu() {
           <Input label="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Price (₹)" type="number" required min="0" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} />
-            <Input label="Prep time (min)" type="number" min="1" value={form.prepTimeMinutes} onChange={(e) => setForm({ ...form, prepTimeMinutes: e.target.value })} />
+            <Input label="Prep time (min)" type="number" required min="1" value={form.prepTimeMinutes} onChange={(e) => setForm({ ...form, prepTimeMinutes: e.target.value })} />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Opening stock" type="number" min="0" value={form.openingStock} onChange={(e) => setForm({ ...form, openingStock: e.target.value })} />
-            <Input label="Low stock alert at" type="number" min="0" value={form.lowStockThreshold} onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })} />
-          </div>
+          {!editingId && (
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Opening stock" type="number" min="0" value={form.openingStock} onChange={(e) => setForm({ ...form, openingStock: e.target.value })} />
+              <Input label="Low stock alert at" type="number" min="0" value={form.lowStockThreshold} onChange={(e) => setForm({ ...form, lowStockThreshold: e.target.value })} />
+            </div>
+          )}
 
           <div>
             <div className="flex items-center justify-between mb-1.5">
@@ -238,13 +309,23 @@ export default function VendorMenu() {
             </div>
           </div>
 
-          <Button type="submit" disabled={saving || uploading} className="w-full">{saving ? 'Saving…' : 'Add item'}</Button>
+          <Button type="submit" disabled={saving || uploading} className="w-full">
+            {saving ? 'Saving…' : editingId ? 'Save changes' : 'Add item'}
+          </Button>
         </form>
       </Modal>
 
       <Modal open={!!restockTarget} onClose={() => setRestockTarget(null)} title={`Restock ${restockTarget?.name || ''}`}>
         <Input label="Add quantity" type="number" min="1" value={restockAmount} onChange={(e) => setRestockAmount(e.target.value)} />
         <Button onClick={submitRestock} className="w-full mt-4">Update stock</Button>
+      </Modal>
+
+      <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title={`Delete ${deleteTarget?.name || ''}?`}>
+        <p className="text-sm text-ink-700 mb-4">This removes it from your menu immediately. Students won't be able to order it anymore.</p>
+        <div className="flex gap-2">
+          <Button variant="secondary" className="flex-1" onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button className="flex-1 !bg-rose-500 hover:!bg-rose-600" onClick={confirmDelete}>Delete</Button>
+        </div>
       </Modal>
 
       <Modal
@@ -259,7 +340,7 @@ export default function VendorMenu() {
             </div>
             <p className="text-sm text-ink-700 font-medium">Take or upload a clear photo of your physical menu</p>
             <p className="text-xs text-ink-500 mt-1.5 max-w-xs mx-auto">
-              AI will read the item names and prices and pre-fill your menu — you'll review everything before it's added.
+              AI reads item names and prices. You'll add prep time, stock, category, and a photo for each item yourself before anything is saved.
             </p>
             <input ref={aiFileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleAiFileSelect} />
             <Button className="mt-5" onClick={() => aiFileInputRef.current?.click()} disabled={extracting}>
@@ -270,19 +351,45 @@ export default function VendorMenu() {
         ) : (
           <div>
             <p className="text-sm text-ink-700 mb-3">
-              Found {extractedItems.length} item(s). Uncheck or edit anything that's wrong before adding.
+              Found {extractedItems.length} item(s) with name + price. Fill in the rest for each before adding.
             </p>
-            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+            <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
               {extractedItems.map((row, i) => (
-                <div key={i} className={`flex items-center gap-2 p-2 rounded-xl border ${row.include ? 'border-cream-300' : 'border-cream-200 opacity-50'}`}>
-                  <input type="checkbox" checked={row.include} onChange={(e) => updateExtractedRow(i, 'include', e.target.checked)} />
-                  <input className="input !py-1.5 flex-1 min-w-0" value={row.name} onChange={(e) => updateExtractedRow(i, 'name', e.target.value)} placeholder="Item name" />
-                  <input className="input !py-1.5 w-20" value={row.category} onChange={(e) => updateExtractedRow(i, 'category', e.target.value)} placeholder="Category" />
-                  <input type="number" className="input !py-1.5 w-20" value={row.price} onChange={(e) => updateExtractedRow(i, 'price', e.target.value)} placeholder="₹" />
-                  <button onClick={() => removeExtractedRow(i)} className="text-ink-300 hover:text-rose-500 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                <div key={i} className={`p-3 rounded-xl border ${row.include ? 'border-cream-300' : 'border-cream-200 opacity-50'}`}>
+                  <div className="flex items-center gap-2 mb-2">
+                    <input type="checkbox" checked={row.include} onChange={(e) => updateExtractedRow(i, 'include', e.target.checked)} />
+                    <button
+                      type="button"
+                      onClick={() => { rowFileInputRef.current._rowIndex = i; rowFileInputRef.current.click(); }}
+                      className="w-10 h-10 rounded-lg bg-cream-200 border border-dashed border-cream-300 flex items-center justify-center overflow-hidden shrink-0"
+                    >
+                      {row.imageUrl ? <img src={row.imageUrl} alt="" className="w-full h-full object-cover" /> : <ImagePlus className="w-3.5 h-3.5 text-ink-300" />}
+                    </button>
+                    <input className="input !py-1.5 flex-1 min-w-0" value={row.name} onChange={(e) => updateExtractedRow(i, 'name', e.target.value)} placeholder="Item name" />
+                    <button onClick={() => removeExtractedRow(i)} className="text-ink-300 hover:text-rose-500 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                  </div>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    <input type="number" className="input !py-1.5" value={row.price} onChange={(e) => updateExtractedRow(i, 'price', e.target.value)} placeholder="₹ Price" />
+                    <input className="input !py-1.5" value={row.category} onChange={(e) => updateExtractedRow(i, 'category', e.target.value)} placeholder="Category" />
+                    <input type="number" className="input !py-1.5" value={row.prepTimeMinutes} onChange={(e) => updateExtractedRow(i, 'prepTimeMinutes', e.target.value)} placeholder="Prep (min)" />
+                    <input type="number" className="input !py-1.5" value={row.openingStock} onChange={(e) => updateExtractedRow(i, 'openingStock', e.target.value)} placeholder="Stock" />
+                  </div>
+                  {uploadingRowIndex === i && <p className="text-xs text-ink-500 mt-1">Uploading photo…</p>}
                 </div>
               ))}
             </div>
+            <input
+              ref={rowFileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                const idx = rowFileInputRef.current._rowIndex;
+                if (file && idx != null) uploadRowPhoto(idx, file);
+                e.target.value = '';
+              }}
+            />
             <div className="flex gap-2 mt-4">
               <Button variant="secondary" className="flex-1" onClick={() => setExtractedItems(null)}>Try another photo</Button>
               <Button className="flex-1" onClick={confirmExtraction} disabled={confirmingExtraction}>

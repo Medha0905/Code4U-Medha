@@ -1,28 +1,61 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { Users } from 'lucide-react';
 import * as shopsApi from '../../services/shops';
 import * as bulkApi from '../../services/bulkOrders';
 import Input from '../../components/Input';
 import Button from '../../components/Button';
+import { CardSkeleton } from '../../components/Skeleton';
 
 export default function BulkOrder() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const shopId = params.get('shopId');
   const [shop, setShop] = useState(null);
+  const [allShops, setAllShops] = useState(null);
   const [quantities, setQuantities] = useState({});
   const [form, setForm] = useState({ numberOfPeople: 10, eventDate: '', servingTime: '', eatingTime: '', specialInstructions: '', seatBooking: true, paymentMethod: 'ONLINE' });
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (shopId) shopsApi.getShop(shopId).then(setShop);
+    else shopsApi.listShops().then(setAllShops).catch(() => setAllShops([]));
   }, [shopId]);
 
+  // No shop chosen yet — show a real picker instead of a dead-end message.
   if (!shopId) {
-    return <p className="text-ink-500">Choose a canteen from the menu page, then select "Bulk order" to get started.</p>;
+    return (
+      <div>
+        <div className="mb-6">
+          <h1 className="font-display text-2xl font-semibold text-ink-900">Bulk order</h1>
+          <p className="text-ink-500 text-sm mt-1">Perfect for clubs, events, or class gatherings. Pick a canteen to get started.</p>
+        </div>
+        {!allShops ? (
+          <div className="grid sm:grid-cols-2 gap-4">{[...Array(4)].map((_, i) => <CardSkeleton key={i} />)}</div>
+        ) : allShops.length === 0 ? (
+          <p className="text-ink-500">No canteens available right now.</p>
+        ) : (
+          <div className="grid sm:grid-cols-2 gap-4">
+            {allShops.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => setParams({ shopId: s.id })}
+                className="card p-4 flex items-center gap-4 text-left hover:border-indigo-300 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-xl shrink-0">🏪</div>
+                <div>
+                  <p className="font-display font-semibold text-ink-900">{s.name}</p>
+                  {s.location && <p className="text-xs text-ink-500 mt-0.5">{s.location}</p>}
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   }
-  if (!shop) return <p className="text-ink-500">Loading…</p>;
+  if (!shop) return <div className="grid sm:grid-cols-2 gap-4">{[...Array(2)].map((_, i) => <CardSkeleton key={i} />)}</div>;
 
   const items = Object.entries(quantities).filter(([, qty]) => qty > 0).map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
 
