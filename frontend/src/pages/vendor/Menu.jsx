@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, PackagePlus, ImagePlus, X } from 'lucide-react';
+import { Plus, PackagePlus, ImagePlus, X, Sparkles, Trash2 } from 'lucide-react';
 import * as shopsApi from '../../services/shops';
 import * as menuApi from '../../services/menu';
 import StatusPill from '../../components/StatusPill';
@@ -25,6 +25,13 @@ export default function VendorMenu() {
   const [restockAmount, setRestockAmount] = useState('');
   const [saving, setSaving] = useState(false);
   const fileInputRef = useRef(null);
+
+  // AI Menu Photo Extraction state
+  const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [extracting, setExtracting] = useState(false);
+  const [extractedItems, setExtractedItems] = useState(null); // null = not run yet
+  const [confirmingExtraction, setConfirmingExtraction] = useState(false);
+  const aiFileInputRef = useRef(null);
 
   const load = () => shopsApi.getMyShop().then((s) => setItems(s.menuItems)).catch(() => setItems([]));
   useEffect(() => { load(); }, []);
@@ -89,6 +96,44 @@ export default function VendorMenu() {
     }
   };
 
+  // ---- AI Menu Photo Extraction ----
+  const handleAiFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setExtracting(true);
+    setExtractedItems(null);
+    try {
+      const result = await menuApi.extractMenuFromPhoto(file);
+      setExtractedItems(result.suggestions.map((s) => ({ ...s, openingStock: '', include: true })));
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not read this photo');
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const updateExtractedRow = (i, key, value) => {
+    setExtractedItems((prev) => prev.map((row, idx) => (idx === i ? { ...row, [key]: value } : row)));
+  };
+  const removeExtractedRow = (i) => setExtractedItems((prev) => prev.filter((_, idx) => idx !== i));
+
+  const confirmExtraction = async () => {
+    const toCreate = extractedItems.filter((it) => it.include && it.name && it.price);
+    if (toCreate.length === 0) return toast.error('Select at least one item to add');
+    setConfirmingExtraction(true);
+    try {
+      const createdItems = await menuApi.bulkCreateFromExtraction(toCreate);
+      toast.success(`${createdItems.length} item(s) added from photo`);
+      setAiModalOpen(false);
+      setExtractedItems(null);
+      load();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not add items');
+    } finally {
+      setConfirmingExtraction(false);
+    }
+  };
+
   if (!items) return <div className="grid sm:grid-cols-3 gap-4">{[...Array(3)].map((_, i) => <CardSkeleton key={i} />)}</div>;
 
   return (
@@ -98,7 +143,10 @@ export default function VendorMenu() {
           <h1 className="font-display text-2xl font-semibold text-ink-900">Menu</h1>
           <p className="text-ink-500 text-sm mt-1">Manage items, photos, add-ons, and stock.</p>
         </div>
-        <Button onClick={() => setModalOpen(true)}><Plus className="w-4 h-4" /> Add item</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => setAiModalOpen(true)}><Sparkles className="w-4 h-4" /> Upload menu photo (AI)</Button>
+          <Button onClick={() => setModalOpen(true)}><Plus className="w-4 h-4" /> Add item</Button>
+        </div>
       </div>
 
       {items.length === 0 ? (
@@ -197,6 +245,52 @@ export default function VendorMenu() {
       <Modal open={!!restockTarget} onClose={() => setRestockTarget(null)} title={`Restock ${restockTarget?.name || ''}`}>
         <Input label="Add quantity" type="number" min="1" value={restockAmount} onChange={(e) => setRestockAmount(e.target.value)} />
         <Button onClick={submitRestock} className="w-full mt-4">Update stock</Button>
+      </Modal>
+
+      <Modal
+        open={aiModalOpen}
+        onClose={() => { setAiModalOpen(false); setExtractedItems(null); }}
+        title="Upload menu photo (AI)"
+      >
+        {!extractedItems ? (
+          <div className="text-center py-6">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-50 flex items-center justify-center mx-auto mb-4">
+              <Sparkles className="w-7 h-7 text-indigo-500" />
+            </div>
+            <p className="text-sm text-ink-700 font-medium">Take or upload a clear photo of your physical menu</p>
+            <p className="text-xs text-ink-500 mt-1.5 max-w-xs mx-auto">
+              AI will read the item names and prices and pre-fill your menu — you'll review everything before it's added.
+            </p>
+            <input ref={aiFileInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleAiFileSelect} />
+            <Button className="mt-5" onClick={() => aiFileInputRef.current?.click()} disabled={extracting}>
+              {extracting ? 'Reading menu…' : 'Choose photo'}
+            </Button>
+            {extracting && <p className="text-xs text-ink-500 mt-3">This can take 10-20 seconds for a full menu photo.</p>}
+          </div>
+        ) : (
+          <div>
+            <p className="text-sm text-ink-700 mb-3">
+              Found {extractedItems.length} item(s). Uncheck or edit anything that's wrong before adding.
+            </p>
+            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+              {extractedItems.map((row, i) => (
+                <div key={i} className={`flex items-center gap-2 p-2 rounded-xl border ${row.include ? 'border-cream-300' : 'border-cream-200 opacity-50'}`}>
+                  <input type="checkbox" checked={row.include} onChange={(e) => updateExtractedRow(i, 'include', e.target.checked)} />
+                  <input className="input !py-1.5 flex-1 min-w-0" value={row.name} onChange={(e) => updateExtractedRow(i, 'name', e.target.value)} placeholder="Item name" />
+                  <input className="input !py-1.5 w-20" value={row.category} onChange={(e) => updateExtractedRow(i, 'category', e.target.value)} placeholder="Category" />
+                  <input type="number" className="input !py-1.5 w-20" value={row.price} onChange={(e) => updateExtractedRow(i, 'price', e.target.value)} placeholder="₹" />
+                  <button onClick={() => removeExtractedRow(i)} className="text-ink-300 hover:text-rose-500 shrink-0"><Trash2 className="w-4 h-4" /></button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <Button variant="secondary" className="flex-1" onClick={() => setExtractedItems(null)}>Try another photo</Button>
+              <Button className="flex-1" onClick={confirmExtraction} disabled={confirmingExtraction}>
+                {confirmingExtraction ? 'Adding…' : `Add ${extractedItems.filter((i) => i.include).length} item(s)`}
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

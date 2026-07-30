@@ -2,6 +2,7 @@ import QRCode from 'react-qr-code';
 import { motion } from 'framer-motion';
 import { Clock, Users } from 'lucide-react';
 import StatusPill from './StatusPill';
+import OrderChat from './OrderChat';
 
 /**
  * The pickup Ticket — this app's signature visual element. Styled like a
@@ -10,7 +11,7 @@ import StatusPill from './StatusPill';
  * that's the actual seam in the data — one half is "what you ordered",
  * the other is "what gets scanned at pickup".
  */
-export default function Ticket({ order, queuePosition, estimatedWaitMinutes, qrValue }) {
+export default function Ticket({ order, queuePosition, qrValue }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 12 }}
@@ -40,13 +41,23 @@ export default function Ticket({ order, queuePosition, estimatedWaitMinutes, qrV
               <span>{queuePosition <= 1 ? "You're next" : `${queuePosition - 1} orders ahead`}</span>
             </div>
           )}
-          {estimatedWaitMinutes != null && (
+          {order.waitBucket && (
             <div className="flex items-center gap-1.5 text-sm text-ink-700">
               <Clock className="w-4 h-4 text-indigo-400" />
-              <span>~{estimatedWaitMinutes} min</span>
+              <span>Ready in {order.waitBucket === 'UNDER_20' ? 'under 20 min' : '20+ min'}</span>
+            </div>
+          )}
+          {!order.waitBucket && order.status === 'PLACED' && (
+            <div className="flex items-center gap-1.5 text-sm text-ink-500">
+              <Clock className="w-4 h-4 text-ink-300" />
+              <span>Waiting for vendor to accept</span>
             </div>
           )}
         </div>
+
+        {['PLACED', 'ACCEPTED', 'PREPARING', 'READY'].includes(order.status) && (
+          <OrderChat orderId={order.id} />
+        )}
       </div>
 
       <div className="ticket-perforation flex flex-col items-center justify-center gap-2.5 p-6 sm:w-48">

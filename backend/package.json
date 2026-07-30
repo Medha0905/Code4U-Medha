@@ -30,6 +30,7 @@
     "pdfkit": "^0.15.0",
     "qrcode": "^1.5.4",
     "socket.io": "^4.7.5",
+    "tesseract.js": "^5.1.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {

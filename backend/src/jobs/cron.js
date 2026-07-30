@@ -28,7 +28,8 @@ function startCronJobs(io) {
           }
         }
 
-        // Delay detection: orders stuck in PREPARING past their estimated wait.
+        // Delay detection: orders stuck past the vendor's own wait-bucket promise.
+        // UNDER_20 -> flag if over 25 min elapsed (20 + 5 min grace); OVER_20 -> flag if over 45 min.
         const delayed = await prisma.queueEntry.findMany({
           where: {
             shopId: shop.id,
@@ -40,7 +41,8 @@ function startCronJobs(io) {
 
         for (const entry of delayed) {
           const elapsedMinutes = (Date.now() - new Date(entry.enteredAt).getTime()) / 60000;
-          if (elapsedMinutes > entry.estimatedWaitMinutes + 5) {
+          const threshold = entry.order.waitBucket === 'OVER_20' ? 45 : 25;
+          if (elapsedMinutes > threshold) {
             const notification = await prisma.notification.create({
               data: {
                 userId: entry.order.student.userId,

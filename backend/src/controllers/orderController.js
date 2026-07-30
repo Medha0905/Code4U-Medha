@@ -94,8 +94,6 @@ const placeOrder = asyncHandler(async (req, res) => {
     const lowStockAlerts = await inventoryService.deductStockForOrder(tx, items, io);
 
     const position = await queueService.nextQueuePosition(shopId);
-    const prepTimes = order.items.map((it) => it.menuItem.prepTimeMinutes);
-    const waitMinutes = await queueService.predictWaitMinutes(shopId, prepTimes);
 
     const queueEntry = await tx.queueEntry.create({
       data: {
@@ -103,11 +101,10 @@ const placeOrder = asyncHandler(async (req, res) => {
         shopId,
         studentId: req.user.profileId,
         position,
-        estimatedWaitMinutes: waitMinutes,
       },
     });
 
-    return { order, lowStockAlerts, queueEntry, waitMinutes };
+    return { order, lowStockAlerts, queueEntry };
   });
 
   const qrDataUrl = await generateQrDataUrl(result.order.qrToken);
@@ -123,7 +120,7 @@ const placeOrder = asyncHandler(async (req, res) => {
   sockets.emitQueueUpdate(io, shopId, fullQueue);
   sockets.emitOrderStatusUpdate(io, shopId, result.order);
 
-  return created(res, { ...result.order, qrDataUrl, queuePosition: result.queueEntry.position, estimatedWaitMinutes: result.waitMinutes }, 'Order placed successfully');
+  return created(res, { ...result.order, qrDataUrl, queuePosition: result.queueEntry.position }, 'Order placed successfully');
 });
 
 const VALID_TRANSITIONS = {
@@ -135,13 +132,20 @@ const VALID_TRANSITIONS = {
 
 const updateOrderStatus = asyncHandler(async (req, res) => {
   const io = req.app.get('io');
-  const { status } = req.body;
+  const { status, waitBucket } = req.body;
   const order = await prisma.order.findUnique({ where: { id: req.params.id }, include: { shop: true, student: true } });
   if (!order) throw new ApiError(404, 'Order not found');
   if (order.shop.vendorId !== req.user.profileId) throw new ApiError(403, 'Not your shop');
 
   const allowed = VALID_TRANSITIONS[order.status] || [];
   if (!allowed.includes(status)) throw new ApiError(400, `Cannot move order from ${order.status} to ${status}`);
+
+  // When accepting, the vendor sets a wait bucket ("under 20 min" / "20+ min")
+  // instead of an algorithmically-computed estimate — the vendor has real
+  // visibility into kitchen parallelism and walk-in load that no formula can see.
+  if (status === 'ACCEPTED' && waitBucket && !['UNDER_20', 'OVER_20'].includes(waitBucket)) {
+    throw new ApiError(422, 'Invalid wait bucket');
+  }
 
   const timestampField = {
     ACCEPTED: 'acceptedAt',
@@ -152,11 +156,16 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
 
   const updated = await prisma.order.update({
     where: { id: order.id },
-    data: { status, ...(timestampField ? { [timestampField]: new Date() } : {}) },
+    data: {
+      status,
+      ...(timestampField ? { [timestampField]: new Date() } : {}),
+      ...(status === 'ACCEPTED' && waitBucket ? { waitBucket } : {}),
+    },
   });
 
+  const bucketLabel = waitBucket === 'UNDER_20' ? 'under 20 minutes' : '20+ minutes';
   const messages = {
-    ACCEPTED: ['ORDER_ACCEPTED', 'Order Accepted', `Your order #${order.tokenNumber} has been accepted.`],
+    ACCEPTED: ['ORDER_ACCEPTED', 'Order Accepted', `Your order #${order.tokenNumber} has been accepted — ready in ${bucketLabel}.`],
     PREPARING: ['ORDER_PREPARING', 'Preparing', `Your order #${order.tokenNumber} is being prepared.`],
     READY: ['ORDER_READY', 'Ready for Pickup', `Your order #${order.tokenNumber} is ready! Please collect it.`],
   };

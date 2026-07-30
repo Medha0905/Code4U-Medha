@@ -69,7 +69,7 @@ export default function StudentOrders() {
         ) : (
           <div className="space-y-4">
             {active.map((o) => (
-              <Ticket key={o.id} order={o} queuePosition={o.queueEntry?.position} estimatedWaitMinutes={o.queueEntry?.estimatedWaitMinutes} qrValue={o.qrToken} />
+              <Ticket key={o.id} order={o} queuePosition={o.queueEntry?.position} qrValue={o.qrToken} />
             ))}
           </div>
         )}

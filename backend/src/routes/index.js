@@ -14,6 +14,7 @@ router.use('/vendor', require('./vendorRoutes'));
 router.use('/admin', require('./adminRoutes'));
 router.use('/reviews', require('./reviewRoutes'));
 router.use('/uploads', require('./uploadRoutes'));
+router.use('/messages', require('./messageRoutes'));
 
 router.get('/health', (req, res) => res.json({ success: true, message: 'API is healthy' }));
 

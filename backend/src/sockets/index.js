@@ -33,6 +33,14 @@ function initSockets(io) {
       if (shopId) socket.leave(`shop:${shopId}`);
     });
 
+    socket.on('order:subscribe', (orderId) => {
+      if (orderId) socket.join(`order:${orderId}`);
+    });
+
+    socket.on('order:unsubscribe', (orderId) => {
+      if (orderId) socket.leave(`order:${orderId}`);
+    });
+
     socket.on('disconnect', () => {});
   });
 }
@@ -56,6 +64,9 @@ function emitSeatStatus(io, shopId, seatStatus) {
 function emitNotification(io, userId, notification) {
   io.to(`user:${userId}`).emit('notification:new', notification);
 }
+function emitNewMessage(io, orderId, message) {
+  io.to(`order:${orderId}`).emit('message:new', message);
+}
 
 module.exports = {
   initSockets,
@@ -65,4 +76,5 @@ module.exports = {
   emitKitchenLoad,
   emitSeatStatus,
   emitNotification,
+  emitNewMessage,
 };

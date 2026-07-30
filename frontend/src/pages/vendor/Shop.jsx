@@ -8,6 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import Input from '../../components/Input';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
+import SeatOccupancyMonitor from '../../components/SeatOccupancyMonitor';
 import { CardSkeleton } from '../../components/Skeleton';
 
 const SEAT_OPTIONS = ['PLENTY', 'MODERATE', 'FEW_LEFT', 'NEARLY_FULL', 'FULL'];
@@ -24,14 +25,14 @@ export default function VendorShop() {
   const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    shopsApi.getMyShop().then((s) => { setShop(s); setForm({ name: s.name, description: s.description || '', location: s.location || '', contactPhone: s.contactPhone || '', openingTime: s.openingTime || '', closingTime: s.closingTime || '' }); });
+    shopsApi.getMyShop().then((s) => { setShop(s); setForm({ name: s.name, description: s.description || '', location: s.location || '', contactPhone: s.contactPhone || '', openingTime: s.openingTime || '', closingTime: s.closingTime || '', seatCapacity: s.seatCapacity || '' }); });
   }, []);
 
   const save = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const updated = await shopsApi.updateMyShop(form);
+      const updated = await shopsApi.updateMyShop({ ...form, seatCapacity: form.seatCapacity ? Number(form.seatCapacity) : null });
       setShop(updated);
       toast.success('Shop updated');
     } catch (err) {
@@ -83,11 +84,13 @@ export default function VendorShop() {
           <Input label="Opening time" type="time" value={form.openingTime} onChange={(e) => setForm({ ...form, openingTime: e.target.value })} />
           <Input label="Closing time" type="time" value={form.closingTime} onChange={(e) => setForm({ ...form, closingTime: e.target.value })} />
         </div>
+        <Input label="Total seat capacity (needed for camera seat monitor)" type="number" min="1" value={form.seatCapacity} onChange={(e) => setForm({ ...form, seatCapacity: e.target.value })} placeholder="e.g. 20" />
         <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
       </form>
 
       <div className="card p-6">
-        <h2 className="font-display font-semibold text-ink-900 mb-3">Seat availability</h2>
+        <h2 className="font-display font-semibold text-ink-900 mb-1">Seat availability</h2>
+        <p className="text-sm text-ink-500 mb-3">Set manually, or let the camera monitor below update it automatically.</p>
         <div className="flex flex-wrap gap-2">
           {SEAT_OPTIONS.map((s) => (
             <button key={s} onClick={() => setSeat(s)} className={`px-3.5 py-2 rounded-full text-sm font-medium border ${shop.seatStatus === s ? 'border-indigo-400 bg-indigo-50 text-indigo-700' : 'border-cream-300 text-ink-700'}`}>
@@ -95,6 +98,15 @@ export default function VendorShop() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="card p-6">
+        <h2 className="font-display font-semibold text-ink-900 mb-1">Camera seat monitor (AI)</h2>
+        <p className="text-sm text-ink-500 mb-3">
+          Points a camera at your seating area — an object-detection model counts people in real time
+          and automatically updates the seat availability tier above, no manual guessing needed.
+        </p>
+        <SeatOccupancyMonitor seatCapacity={shop.seatCapacity} onStatusChange={(tier) => setShop((s) => ({ ...s, seatStatus: tier }))} />
       </div>
 
       <div className="card p-6 flex items-center justify-between">

@@ -3,6 +3,8 @@ const { ApiError, ok, created } = require('../utils/apiResponse');
 const { asyncHandler } = require('../middlewares/validate');
 const inventoryService = require('../services/inventoryService');
 const { emitInventoryUpdate } = require('../sockets');
+const ocrService = require('../services/ocrService');
+const { parseMenuText } = require('../services/menuExtractionService');
 
 async function getOwnedShopOrThrow(vendorProfileId) {
   const shop = await prisma.shop.findUnique({ where: { vendorId: vendorProfileId } });
@@ -113,6 +115,55 @@ const setLowStockThreshold = asyncHandler(async (req, res) => {
   return ok(res, updated, 'Low stock threshold updated');
 });
 
+/**
+ * AI Menu Photo Extraction: vendor uploads one photo of a physical menu
+ * card/board -> OCR (Tesseract.js) pulls raw text -> heuristic parser
+ * structures it into { name, price, category } suggestions. Nothing is
+ * saved yet — the vendor reviews/edits these suggestions and confirms via
+ * bulkCreateFromExtraction below, since OCR on real photos is never perfect.
+ */
+const extractMenuFromPhoto = asyncHandler(async (req, res) => {
+  if (!req.file) throw new ApiError(400, 'No image file provided');
+
+  const rawText = await ocrService.extractTextFromImage(req.file.path);
+  const suggestions = parseMenuText(rawText);
+
+  if (suggestions.length === 0) {
+    throw new ApiError(422, "Couldn't detect any menu items in this photo. Try a clearer, well-lit photo, or add items manually.");
+  }
+
+  return ok(res, { suggestions, rawText }, `Found ${suggestions.length} possible item(s) — review before adding`);
+});
+
+/** Vendor confirms the (possibly edited) extracted list -> bulk-creates real menu items. */
+const bulkCreateFromExtraction = asyncHandler(async (req, res) => {
+  const shop = await getOwnedShopOrThrow(req.user.profileId);
+  const { items } = req.body; // [{ name, price, category, openingStock?, lowStockThreshold? }]
+
+  if (!Array.isArray(items) || items.length === 0) throw new ApiError(422, 'No items to add');
+
+  const createdItems = [];
+  for (const it of items) {
+    if (!it.name || !it.price) continue;
+    const stock = Number(it.openingStock) || 0;
+    const menuItem = await prisma.menuItem.create({
+      data: {
+        shopId: shop.id,
+        name: it.name,
+        category: it.category || 'Menu',
+        price: Number(it.price),
+        prepTimeMinutes: Number(it.prepTimeMinutes) || 10,
+        inventory: {
+          create: { quantity: stock, openingStock: stock, lowStockThreshold: Number(it.lowStockThreshold) || 10 },
+        },
+      },
+    });
+    createdItems.push(menuItem);
+  }
+
+  return created(res, createdItems, `${createdItems.length} menu item(s) added from photo`);
+});
+
 module.exports = {
   addMenuItem,
   updateMenuItem,
@@ -120,4 +171,6 @@ module.exports = {
   listMenuForShop,
   restockItem,
   setLowStockThreshold,
+  extractMenuFromPhoto,
+  bulkCreateFromExtraction,
 };

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { QrCode, ClipboardList, Camera, Keyboard } from 'lucide-react';
 import * as ordersApi from '../../services/orders';
@@ -11,6 +12,7 @@ import { CardSkeleton } from '../../components/Skeleton';
 import { getSocket } from '../../services/socket';
 import QrScanner from '../../components/QrScanner';
 import ErrorBoundary from '../../components/ErrorBoundary';
+import OrderChat from '../../components/OrderChat';
 
 const NEXT_STATUS = { PLACED: 'ACCEPTED', ACCEPTED: 'PREPARING', PREPARING: 'READY' };
 const NEXT_LABEL = { PLACED: 'Accept', ACCEPTED: 'Start preparing', PREPARING: 'Mark ready' };
@@ -33,12 +35,21 @@ export default function VendorOrders() {
     return () => socket.off('order:status', refresh);
   }, []);
 
-  const advance = async (order) => {
+  const advance = async (order, waitBucket) => {
+    const nextStatus = NEXT_STATUS[order.status];
+    const previousOrders = orders;
+
+    // Optimistic update: reflect the change instantly, before the server confirms,
+    // so the vendor's UI feels immediate during a busy rush instead of waiting on
+    // a network round-trip. Reconciled with real data via load(); rolled back on error.
+    setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, status: nextStatus, waitBucket: waitBucket || o.waitBucket } : o)));
+
     try {
-      await ordersApi.updateOrderStatus(order.id, NEXT_STATUS[order.status]);
+      await ordersApi.updateOrderStatus(order.id, nextStatus, waitBucket);
       toast.success('Order updated');
       load();
     } catch (err) {
+      setOrders(previousOrders); // roll back on failure
       toast.error(err.response?.data?.message || 'Could not update order');
     }
   };
@@ -85,9 +96,7 @@ export default function VendorOrders() {
     }
   };
 
-  if (!orders) return <div className="grid gap-4">{[...Array(3)].map((_, i) => <CardSkeleton key={i} />)}</div>;
-
-  const activeOrders = orders.filter((o) => ['PLACED', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status));
+  const activeOrders = orders ? orders.filter((o) => ['PLACED', 'ACCEPTED', 'PREPARING', 'READY'].includes(o.status)) : [];
 
   return (
     <div>
@@ -99,12 +108,28 @@ export default function VendorOrders() {
         <Button onClick={() => setScanOpen(true)}><QrCode className="w-4 h-4" /> Scan pickup</Button>
       </div>
 
-      {activeOrders.length === 0 ? (
-        <EmptyState icon={ClipboardList} title="No active orders" description="New orders will appear here in real time." />
-      ) : (
-        <div className="grid sm:grid-cols-2 gap-4">
-          {activeOrders.map((o) => (
-            <div key={o.id} className="card p-4">
+      <AnimatePresence mode="wait">
+        {!orders ? (
+          <motion.div key="skeleton" exit={{ opacity: 0 }} className="grid gap-4">
+            {[...Array(3)].map((_, i) => <CardSkeleton key={i} />)}
+          </motion.div>
+        ) : activeOrders.length === 0 ? (
+          <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            <EmptyState icon={ClipboardList} title="No active orders" description="New orders will appear here in real time." />
+          </motion.div>
+        ) : (
+          <motion.div key="content" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid sm:grid-cols-2 gap-4">
+            <AnimatePresence>
+              {activeOrders.map((o) => (
+                <motion.div
+                  key={o.id}
+                  layout
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ duration: 0.2 }}
+                  className="card p-4"
+                >
               <div className="flex items-center justify-between mb-2">
                 <p className="font-mono font-semibold text-indigo-600">#{o.tokenNumber}</p>
                 <StatusPill status={o.status} size="sm" />
@@ -113,18 +138,33 @@ export default function VendorOrders() {
               <ul className="text-sm text-ink-500 mt-1.5 space-y-0.5">
                 {o.items.map((it) => <li key={it.id}>{it.quantity} × {it.menuItem.name}</li>)}
               </ul>
+              {o.waitBucket && (
+                <p className="text-xs text-indigo-500 mt-1.5">
+                  Promised: {o.waitBucket === 'UNDER_20' ? 'under 20 min' : '20+ min'}
+                </p>
+              )}
               <div className="flex items-center gap-2 mt-4">
-                {NEXT_STATUS[o.status] && (
-                  <Button onClick={() => advance(o)} className="!py-2 text-sm flex-1">{NEXT_LABEL[o.status]}</Button>
+                {o.status === 'PLACED' ? (
+                  <>
+                    <Button onClick={() => advance(o, 'UNDER_20')} className="!py-2 text-xs flex-1">Accept · Under 20 min</Button>
+                    <Button onClick={() => advance(o, 'OVER_20')} variant="secondary" className="!py-2 text-xs flex-1">Accept · 20+ min</Button>
+                  </>
+                ) : (
+                  NEXT_STATUS[o.status] && (
+                    <Button onClick={() => advance(o)} className="!py-2 text-sm flex-1">{NEXT_LABEL[o.status]}</Button>
+                  )
                 )}
                 {o.paymentMethod === 'COD' && o.status !== 'READY' && (
                   <button onClick={() => noShow(o)} className="btn-ghost !py-2 text-sm text-rose-500">No-show</button>
                 )}
               </div>
-            </div>
-          ))}
-        </div>
-      )}
+              <OrderChat orderId={o.id} />
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <Modal
         open={scanOpen}

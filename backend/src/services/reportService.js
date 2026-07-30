@@ -41,8 +41,9 @@ async function generateDailyReport(shopId, date = new Date()) {
       productWiseSales[key].revenue += item.quantity * Number(item.unitPrice);
     }
 
-    if (order.queueEntry?.estimatedWaitMinutes) {
-      totalWait += order.queueEntry.estimatedWaitMinutes;
+    if (order.queueEntry?.enteredAt) {
+      const measuredMinutes = (new Date(order.completedAt).getTime() - new Date(order.queueEntry.enteredAt).getTime()) / 60000;
+      totalWait += measuredMinutes;
       waitCount += 1;
     }
   }

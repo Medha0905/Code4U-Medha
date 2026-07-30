@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Search } from 'lucide-react';
 import * as shopsApi from '../../services/shops';
 import * as queueApi from '../../services/queue';
@@ -35,7 +35,6 @@ export default function StudentHome() {
           <Ticket
             order={myQueue.order}
             queuePosition={myQueue.position}
-            estimatedWaitMinutes={myQueue.estimatedWaitMinutes}
             qrValue={myQueue.order?.qrToken}
           />
         </div>
@@ -53,17 +52,28 @@ export default function StudentHome() {
 
       <div>
         <h2 className="font-display font-semibold text-ink-900 mb-3">Canteens</h2>
-        {!shops ? (
-          <div className="grid sm:grid-cols-2 gap-4">
-            {[...Array(4)].map((_, i) => <CardSkeleton key={i} />)}
-          </div>
-        ) : filtered.length === 0 ? (
-          <EmptyState icon={Store} title="No canteens found" description="Try a different search, or check back soon." />
-        ) : (
-          <motion.div layout className="grid sm:grid-cols-2 gap-4">
-            {filtered.map((shop) => <ShopCard key={shop.id} shop={shop} />)}
-          </motion.div>
-        )}
+        <AnimatePresence mode="wait">
+          {!shops ? (
+            <motion.div key="skeleton" exit={{ opacity: 0 }} className="grid sm:grid-cols-2 gap-4">
+              {[...Array(4)].map((_, i) => <CardSkeleton key={i} />)}
+            </motion.div>
+          ) : filtered.length === 0 ? (
+            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+              <EmptyState icon={Store} title="No canteens found" description="Try a different search, or check back soon." />
+            </motion.div>
+          ) : (
+            <motion.div
+              key="content"
+              layout
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 0.25 }}
+              className="grid sm:grid-cols-2 gap-4"
+            >
+              {filtered.map((shop) => <ShopCard key={shop.id} shop={shop} />)}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

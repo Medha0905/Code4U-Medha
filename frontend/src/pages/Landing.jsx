@@ -23,8 +23,7 @@ export default function Landing() {
             Order ahead.<br />Watch your token move.<br />Walk in when it's ready.
           </h1>
           <p className="text-ink-500 mt-5 max-w-md">
-            Smart Canteen replaces the physical line with a live queue, AI wait-time
-            predictions, and a QR pickup ticket — for students and vendors alike.
+            Smart Canteen replaces the physical line with a live queue, real measured pick-up times, and a QR pickup ticket — for students and vendors alike.
           </p>
           <div className="flex gap-3 mt-8">
             <Link to="/register/student" className="btn-primary">I'm a student</Link>
@@ -55,7 +54,7 @@ export default function Landing() {
 
       <section className="max-w-6xl mx-auto px-6 pb-24 grid sm:grid-cols-3 gap-6">
         {[
-          { icon: Clock, title: 'AI wait-time prediction', body: 'Know exactly when to walk in — no more standing in line to find out.' },
+          { icon: Clock, title: 'Real measured pick-up times', body: 'Know exactly when to walk in — no more standing in line to find out.' },
           { icon: QrCode, title: 'QR pickup tokens', body: 'Scan, verify, done. No duplicate collections, no manual bookkeeping.' },
           { icon: LineChart, title: 'Vendor analytics', body: 'Revenue, demand patterns, and end-of-day reports — all from real orders.' },
         ].map(({ icon: Icon, title, body }) => (

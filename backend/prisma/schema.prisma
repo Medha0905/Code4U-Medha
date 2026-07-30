@@ -8,8 +8,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
@@ -34,6 +34,11 @@ enum FoodAvailability {
   LIMITED
   ALMOST_FINISHED
   SOLD_OUT
+}
+
+enum WaitBucket {
+  UNDER_20
+  OVER_20
 }
 
 enum SeatStatus {
@@ -171,6 +176,7 @@ model Shop {
   closingTime     String?    // "18:00"
   status          ShopStatus @default(CLOSED)
   seatStatus      SeatStatus @default(PLENTY)
+  seatCapacity    Int?       // total seats, used by CV occupancy detection to compute tier
   autoPauseEnabled Boolean   @default(false)
   isApproved      Boolean    @default(true)
   isDeleted       Boolean    @default(false)
@@ -262,6 +268,7 @@ model Order {
   readyAt         DateTime?
   completedAt     DateTime?
   estimatedPickupAt DateTime?
+  waitBucket      WaitBucket?   // vendor-set on Accept: "under 20 min" or "20+ min" — replaces algorithmic estimate
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -270,6 +277,7 @@ model Order {
   queueEntry   QueueEntry?
   bulkOrder    BulkOrder?
   review       Review?
+  messages     Message[]
 
   @@index([shopId, status])
   @@index([studentId])
@@ -316,7 +324,6 @@ model QueueEntry {
   studentId      String
   student        Student  @relation(fields: [studentId], references: [id])
   position       Int
-  estimatedWaitMinutes Int
   enteredAt      DateTime @default(now())
   leftAt         DateTime?
 
@@ -441,4 +448,21 @@ model Review {
 
   @@index([shopId])
   @@map("reviews")
+}
+
+// ----------------------------------------------------------------
+// ORDER MESSAGING (simple 2-way text thread per order — not a chatbot)
+// ----------------------------------------------------------------
+
+model Message {
+  id         String   @id @default(uuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  senderRole Role     // STUDENT or VENDOR — which side sent it
+  senderId   String   // the User.id of the sender
+  text       String
+  createdAt  DateTime @default(now())
+
+  @@index([orderId])
+  @@map("messages")
 }

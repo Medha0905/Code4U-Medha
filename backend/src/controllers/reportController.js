@@ -23,12 +23,20 @@ const getVendorAnalytics = asyncHandler(async (req, res) => {
       _sum: { quantity: true },
       orderBy: { _sum: { quantity: 'desc' } },
     }),
-    prisma.queueEntry.findMany({ where: { shopId: shop.id, leftAt: { not: null } }, select: { estimatedWaitMinutes: true } }),
+    prisma.queueEntry.findMany({
+      where: { shopId: shop.id, leftAt: { not: null } },
+      select: { enteredAt: true, order: { select: { completedAt: true } } },
+    }),
   ]);
 
   const todayRevenue = todayOrders.reduce((sum, o) => sum + Number(o.totalAmount), 0);
-  const avgWait = queueEntries.length
-    ? queueEntries.reduce((s, q) => s + q.estimatedWaitMinutes, 0) / queueEntries.length
+  // Real measured wait time — from when the student entered the queue to when
+  // their order was actually completed — not a predicted/estimated number.
+  const measuredWaits = queueEntries
+    .filter((q) => q.order?.completedAt)
+    .map((q) => (new Date(q.order.completedAt).getTime() - new Date(q.enteredAt).getTime()) / 60000);
+  const avgWait = measuredWaits.length
+    ? measuredWaits.reduce((s, m) => s + m, 0) / measuredWaits.length
     : 0;
 
   const hourCounts = Array(24).fill(0);
