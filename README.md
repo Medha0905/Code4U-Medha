@@ -1,5 +1,6 @@
 # 🍽️ Smart Canteen--Skip The Line
 🔗 **Live Demo:** [ smartcanteen-pi.vercel.app]( https://smartcanteen-pi.vercel.app)  
+🖥️ **Backend API:** [smart-canteen-xa2r.onrender.com](https://smart-canteen-xa2r.onrender.com)
 
 A production-grade SaaS platform that digitizes college canteen operations — replacing physical queues with virtual queues, real-time order tracking, two genuine AI features, and direct student-vendor communication.
 
