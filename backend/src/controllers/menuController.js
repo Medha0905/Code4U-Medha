@@ -60,7 +60,7 @@ const deleteMenuItem = asyncHandler(async (req, res) => {
   const item = await prisma.menuItem.findFirst({ where: { id: req.params.id, shopId: shop.id } });
   if (!item) throw new ApiError(404, 'Menu item not found');
 
-  await prisma.menuItem.delete({ where: { id: item.id } });
+  await prisma.menuItem.update({ where: { id: item.id }, data: { isActive: false } });
   return ok(res, null, 'Menu item deleted');
 });
 

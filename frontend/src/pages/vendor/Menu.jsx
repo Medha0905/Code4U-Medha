@@ -37,7 +37,7 @@ export default function VendorMenu() {
   const aiFileInputRef = useRef(null);
   const rowFileInputRef = useRef(null);
 
-  const load = () => shopsApi.getMyShop().then((s) => setItems(s.menuItems)).catch(() => setItems([]));
+  const load = () => shopsApi.getMyShop().then((s) => setItems(s.menuItems.filter((i) => i.isActive))).catch(() => setItems([]));
   useEffect(() => { load(); }, []);
 
   const openAddModal = () => {
