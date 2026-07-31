@@ -1,4 +1,5 @@
-# 🍽️ Smart Canteen Queue & AI Pre-Order System
+# 🍽️ Smart Canteen--Skip The Line
+🔗 **Live Demo:** [ smartcanteen-pi.vercel.app]( https://smartcanteen-pi.vercel.app)  
 
 A production-grade SaaS platform that digitizes college canteen operations — replacing physical queues with virtual queues, real-time order tracking, two genuine AI features, and direct student-vendor communication.
 
@@ -84,8 +85,6 @@ Vendor uploads one photo of their physical menu → **Tesseract.js** (open-sourc
 
 ### 2. Computer-Vision Seat Occupancy Detection
 **TensorFlow.js + COCO-SSD** (a pretrained object-detection model, loaded from CDN, running entirely in the browser) analyzes the vendor's camera feed, counts "person" detections, and automatically updates the shop's seat-availability tier based on occupied-vs-capacity ratio — replacing a manual vendor guess with a live, camera-verified count.
-
-*Note: earlier iterations also included a rule-based/statistical wait-time predictor and business-insights engine — these remain in the codebase as deterministic, explainable analytics (not AI), while wait-time itself is now a vendor-set promise for real-world accuracy (see Design Principles below).*
 
 ---
 
