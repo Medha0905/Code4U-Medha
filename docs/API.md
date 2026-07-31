@@ -56,7 +56,7 @@ All responses: `{ success, message, data }`
 |---|---|---|---|
 | POST | `/bulk-orders` | Student | Place bulk order (+ optional seat booking) |
 | GET | `/bulk-orders/mine` | Student | My bulk orders |
-| GET | `/bulk-orders/shop` | Vendor | Shop's incoming bulk orders |
+| GET | `/bulk-orders/shop` | Vendor | Shop's incoming bulk orders|
 
 ## Favorites
 | Method | Route | Auth |
